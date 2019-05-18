@@ -1,0 +1,283 @@
+#!/bin/sh
+
+# full and incremental backup script
+# 1st of month backup, incremental every monday
+# This will take twice the compressed space on the destination
+#TODO do a stat -c%s on the backup file to make sure size is not 0
+
+#******** USER VARIABLES ********#
+
+# Do Monthly backups:
+DO_DOM=1
+# Do Weekly incremental backups:
+DO_DOW=1
+SCRIPTDIR=/var/tmp/backup_info
+BDFILENAME=full-date
+FULLNAME=full
+INCRNAME=incr
+LOG_ECHO=${LOG_ECHO:-1}
+
+#******** ARGUMENT VARIABLES ********#
+BACKUPUSER=backup
+DIRECTORIES=
+FORCEFULL=0
+FORCEINCR=0
+BACKUPDOM="01"
+BACKUPNAME=file_backup
+BACKUPHOST=
+BACKUPDIR=
+BACKUPTYPE=ssh
+BACKUPDOW="Mon"
+BACKUPENCPW=
+
+#******** FUNCTIONS ********#
+function usage ()
+{
+	echo "Usage:"
+	echo "$0 [options]"
+	echo ""
+	echo "Where [options] are:"
+	echo ""
+	echo "Required options:"
+	echo "  -d <>. . . Directory list, space separated, abs path"
+	echo "  -o <>. . . Destination Host or service"
+	echo "             (ssh=<host>, smb=<host>/<share>)"
+	echo "  -p <>. . . Directory to put the backups on the remote server"
+	echo ""
+	echo "Type, file, authentication, encryption:"
+	echo "  -c <>. . . Credentials for backup type, default: 'backup'"
+	echo "             (ssh=<username>, smb=username:<smbuseropt>)"
+	echo "  -n <>. . . Name of file prefix, default: 'file_backup'"
+	echo "  -t <>. . . Type of backup, default: ssh"
+	echo "             (ssh, smb)"
+	echo "  -e <>. . . GPG encrypt file with given password"
+	echo "             (currently only supported via ssh)"
+	echo ""
+	echo "Schedule (as output by date %a,%d):"
+	echo "  -m <>. . . Day of month to do monthly full backup, default: 01"
+	echo "  -w <>. . . Day of week to do weekly incremental backup, default: Mon"
+	echo "  -f . . . . Force run a full backup"
+	echo "  -i . . . . Force run an incremental backup based on the last full"
+	echo ""
+	echo "Examples:"
+	echo "Example cron file (/etc/cron.daily/$(basename $0)-myserver):"
+	echo "  /abs/path/$(basename $0) -o myserver"
+	echo "Force incremental of /dir/to/backup to ssh://myserver/media/backup:"
+	echo "  $0 -i -d /dir/to/backup -o myserver -p /media/backup"
+	echo "Force run a full backup using samba"
+	echo "  $0 -t smb -f -c user%pass -d /dir/to/backup -o myserver/share -p rem/backup/dir"
+	echo ""
+}
+
+function log_it () {
+
+	#logger -t "$(basename -- $0)" -s -i -- $1
+	#logger -t "$(basename -- $0)" -i -- $1
+	if [ ! -z "$LOG_ECHO" ]; then
+		echo $1
+	fi
+	echo $1 >> $LOGNAME 2>&1
+}
+
+function ssh_type () {
+
+	######### REMOVE THE OLD WORKING
+
+	log_it "running: rm old working"
+	ssh -l ${BACKUPUSER} -- ${BACKUPHOST} rm -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz.working >> $LOGNAME 2>&1
+	log_it "executed: rm old working"
+
+	#~~~~~~~~~ KLUDGE UNTIL MORE DISK SPACE, REMOVE THE OLD BACKUP TOO
+	#ssh -l ${BACKUPUSER} -- ${BACKUPHOST} rm -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz >> $LOGNAME 2>&1
+	#log_it "executed: rm orig"
+	#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	######### TAR IT UP
+
+	log_it "running: tar with $NEWER and $FROMDATE on $DIRECTORIES"
+	RET=1
+	nice tar $NEWER "$FROMDATE" -czf - $DIRECTORIES 2>> $LOGNAME | ssh -l ${BACKUPUSER} -- ${BACKUPHOST} "( cat > $BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz.working )" >> $LOGNAME 2>&1
+	RET="$?"
+	log_it "executed: tar with RET=$RET"
+
+	######### MOVE TO KEEP IF EVERYTHING WENT GOOD
+
+	if [[ "$RET" == "0" ]]; then
+		ssh -l ${BACKUPUSER} -- ${BACKUPHOST} mv -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz.working $BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz >> $LOGNAME 2>&1
+		echo "$BD" > "$ADDTOBDFILENAME" #this only adds if not dev null
+		log_it "executed: mv working to main"
+
+		## Encrypt if requested
+		if [ ! -z "$BACKUPENCPW" ]; then
+			log_it "gpg encrypting"
+			# Encrypt if requested
+			ssh -l ${BACKUPUSER} -- ${BACKUPHOST} gpg --yes --batch --no-use-agent --passphrase=$BACKUPENCPW -c $BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz >> $LOGNAME 2>&1
+			RET="$?"
+			if [[ "$RET" == "0" ]]; then
+				ssh -l ${BACKUPUSER} -- ${BACKUPHOST} rm -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz >> $LOGNAME 2>&1
+			fi
+			log_it "encrypted"
+		fi
+	fi
+}
+
+function smb_type () {
+
+	TMPMOUNTPOINT=/mnt
+
+	######### MOUNT
+	mount -t cifs -o username=${BACKUPUSER} //${BACKUPHOST} $TMPMOUNTPOINT
+	RET="$?"
+	log_it "executed: mount with RET=$RET"
+	if [ "$RET" = "0" ]; then
+
+		######### REMOVE THE OLD WORKING
+
+		rm -f $TMPMOUNTPOINT/$BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz.working >> $LOGNAME 2>&1
+		log_it "executed: rm old working"
+
+		#~~~~~~~~~ KLUDGE UNTIL MORE DISK SPACE, REMOVE THE OLD BACKUP TOO
+		#rm -f $TMPMOUNTPOINT/$BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz >> $LOGNAME 2>&1
+		#log_it "executed: rm orig"
+		#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+		######### TAR IT UP
+
+		log_it "running: tar with $NEWER and $FROMDATE on $DIRECTORIES"
+		RET=1
+		nice tar $NEWER "$FROMDATE" -czf ${TMPMOUNTPOINT}/$BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz.working $DIRECTORIES >> $LOGNAME 2>&1
+		RET="$?"
+		log_it "executed: tar with RET=$RET"
+
+		######### MOVE TO KEEP IF EVERYTHING WENT GOOD
+
+		if [ "$RET" = "0" ]; then
+			mv -f $TMPMOUNTPOINT/$BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz.working $TMPMOUNTPOINT/$BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz >> $LOGNAME 2>&1
+			echo "$BD" > "$ADDTOBDFILENAME" #this only adds if not dev null
+			log_it "executed: mv working to main"
+		fi
+
+		######### UMOUNT
+		umount $TMPMOUNTPOINT
+	fi
+}
+
+#******** MAIN ********#
+
+PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+
+######### PARSE AND CHECK REQUIRED ARGS
+
+while getopts "c:d:e:fim:n:o:p:t:w:" flag; do
+	case $flag in
+		[c])
+			BACKUPUSER="$OPTARG"
+			;;
+		[d])
+			DIRECTORIES="$OPTARG"
+			;;
+		[e])
+			BACKUPENCPW="$OPTARG"
+			;;
+		[f])
+			FORCEFULL=1
+			;;
+		[i])
+			FORCEINCR=1
+			;;
+		[m])
+			BACKUPDOM="$OPTARG"
+			;;
+		[n])
+			BACKUPNAME="$OPTARG"
+			;;
+		[o])
+			BACKUPHOST="$OPTARG"
+			;;
+		[p])
+			BACKUPDIR="$OPTARG"
+			;;
+		[t])
+			BACKUPTYPE="$OPTARG"
+			;;
+		[w])
+			BACKUPDOW="$OPTARG"
+			;;
+		*)
+			echo "Unexpected Argument"
+			usage
+			exit 1
+			;;
+	esac
+done
+
+if [ -z "$BACKUPHOST" -o -z "$DIRECTORIES" -o -z "$BACKUPDIR" ]; then
+	echo "Required arguments not found"
+	usage
+	exit 1
+fi
+
+######### GENERATED MAIN VARIABLES
+
+TYPENAME=
+NEWER=""
+FROMDATE=
+LOGNAME="$SCRIPTDIR/$BACKUPNAME.log"
+ADDTOBDFILENAME="/dev/null"
+DOW=`date +%a` # Day of the week e.g. Mon
+DOM=`date +%d` # Date of the Month e.g. 27
+BD="$(date '+%Y-%m-%d %H:%M:%S')" #Date in day-Month format for the date file and tar newer
+
+######### CREATE THE BACKUP INFO DIR
+
+mkdir -p $SCRIPTDIR
+if [ ! -z "$LOG_ECHO" ]; then
+	echo "Additional logging to $LOGNAME"
+fi
+log_it "$(date) STARTING $0"
+
+######### FIGURE OUT WHAT TYPE OF BACKUP
+
+# if $FORCEFULL or its the first of the month, do this kind.  Flag must be set above.
+if ([ "$DOM" = "$BACKUPDOM" ] || [ "$FORCEFULL" = "1" ]) && [ "$DO_DOM" = "1" ]; then
+	# THIS IS THE FULL BACKUP
+	TYPENAME=$FULLNAME
+	ADDTOBDFILENAME="$SCRIPTDIR/$BACKUPNAME-$BDFILENAME"
+	FROMDATE=
+
+# if $FORCEINCR or its a monday, do this kind.  Flag must be set above.
+elif ([ $DOW = "$BACKUPDOW" ] || [ "$FORCEINCR" = "1" ]) && [ "$DO_DOW" = "1" ]; then
+	# THIS IS THE INCREMENTAL BACKUP
+	TYPENAME=$INCRNAME
+	TEMPFROMDATE="$(cat $SCRIPTDIR/$BACKUPNAME-$BDFILENAME)"
+	if [[ "$TEMPFROMDATE" != "" ]]; then
+		FROMDATE="$TEMPFROMDATE"
+		NEWER="--newer"
+	fi
+fi
+
+######### EXIT IF WE ARENT DOING A BACKUP TODAY
+
+if [[ "$TYPENAME" == "" ]]; then
+	log_it "Backup ran with no TYPENAME, exiting."
+	exit 0
+fi
+
+######### START THE BACKUP
+
+log_it "#########################"
+log_it "Running for BACKUPUSER=${BACKUPUSER} BACKUPHOST=${BACKUPHOST} BACKUPDIR=${BACKUPDIR} BACKUPNAME=${BACKUPNAME} TYPENAME=${TYPENAME} BACKUPTYPE=${BACKUPTYPE} BACKUPDOM=${BACKUPDOM} BACKUPDOW=${BACKUPDOW}"
+
+if [ "$BACKUPTYPE" = "ssh" ]; then
+	ssh_type
+fi
+
+if [ "$BACKUPTYPE" = "smb" ]; then
+	smb_type
+fi
+
+######### COMPLETE
+
+log_it "completed, exiting."
+exit 0
+
