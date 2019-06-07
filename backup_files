@@ -96,6 +96,7 @@ function ssh_type () {
 
 	log_it "running: tar with $NEWER and $FROMDATE on $DIRECTORIES"
 	RET=1
+        # TODO putting an empty "$FROMDATE" will cause one harmless "tar: : No such file or directory" message
 	nice tar $NEWER "$FROMDATE" -czf - $DIRECTORIES 2>> $LOGNAME | ssh -l ${BACKUPUSER} -- ${BACKUPHOST} "( cat > $BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz.working )" >> $LOGNAME 2>&1
 	RET="$?"
 	log_it "executed: tar with RET=$RET"
@@ -105,7 +106,7 @@ function ssh_type () {
 	if [[ "$RET" == "0" ]]; then
 		ssh -l ${BACKUPUSER} -- ${BACKUPHOST} mv -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz.working $BACKUPDIR/$BACKUPNAME-$TYPENAME.tgz >> $LOGNAME 2>&1
 		echo "$BD" > "$ADDTOBDFILENAME" #this only adds if not dev null
-		log_it "executed: mv working to main"
+		log_it "executed: mv working to main for $BD in $ADDTOBDFILENAME"
 
 		## Encrypt if requested
 		if [ ! -z "$BACKUPENCPW" ]; then
