@@ -1,7 +1,7 @@
 FROM jwater7/supervisor-scheduler
 LABEL maintainer "j"
 
-RUN apk --update --no-cache add openssh-client
+RUN apk --update --no-cache add openssh-client tar
 
 ENV BACKUP_DIRS /data
 #ENV DEST_HOST
