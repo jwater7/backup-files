@@ -31,6 +31,8 @@ BACKUPDOW="Mon"
 BACKUPENCPW=
 COMPRESSOPT=
 BACKUPEXT=tar
+SZ=10G
+PAR=
 
 #******** FUNCTIONS ********#
 usage() {
@@ -52,10 +54,14 @@ usage() {
 	echo "             (ssh=<username>, smb=username:<smbuseropt>)"
 	echo "  -n <>. . . Name of file prefix, default: 'file_backup'"
 	echo "  -t <>. . . Type of backup, default: ssh"
-	echo "             (ssh, smb, local)"
+	echo "             (ssh, smb, local, localmulti)"
 	echo "  -e <>. . . GPG encrypt file with given password"
 	echo "             (Currently only supported via ssh)"
 	echo "  -z <>. . . Compress tar option, default: 'z'"
+	echo "  -l <>. . . Multivolume size option, default: '10G'"
+	echo "             (Currently only supported via localmulti)"
+	echo "  -r . . . . create par2 files after creating backup files"
+	echo "             (Currently only supported via localmulti)"
 	echo ""
 	echo "Schedule (as output by date %a,%d):"
 	echo "  -m <>. . . Day of month to do monthly full backup, default: 01"
@@ -183,6 +189,7 @@ local_type() {
 
 	log_it "running: tar with $NEWER and $FROMDATE on $DIRECTORIES"
 	RET=1
+
 	nice tar $NEWER "$FROMDATE" -c $COMPRESSOPT -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT.working $DIRECTORIES >> $LOGNAME 2>&1
 	RET="$?"
 	log_it "executed: tar with RET=$RET"
@@ -196,13 +203,53 @@ local_type() {
 	fi
 }
 
+localmulti_type() {
+
+	######### REMOVE THE OLD FILES - DOES NOT SUPPORT WORKING STAGE
+
+	rm -f $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT >> $LOGNAME 2>&1
+	rm -f $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT-* >> $LOGNAME 2>&1
+	if [ "$PAR" = "1" ]; then
+		rm -f $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT.par2 >> $LOGNAME 2>&1
+		rm -f $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT.*.par2 >> $LOGNAME 2>&1
+	fi
+	log_it "executed: rm orig"
+
+	######### TAR IT UP
+
+	VOLSCRIPT="
+		echo Preparing volume \$TAR_VOLUME of \$TAR_ARCHIVE.
+		name=\$(expr \$TAR_ARCHIVE : '\(.*\)-.*')
+		case \$TAR_SUBCOMMAND in
+			-c) ;;
+			-d|-x|-t) test -r \${name:-\$TAR_ARCHIVE}-\$TAR_VOLUME || exit 1 ;;
+			*) exit 1
+		esac
+		printf '%s-%03d' \${name:-\$TAR_ARCHIVE} \$TAR_VOLUME >&\$TAR_FD
+	"
+
+	log_it "running: tar with $SZ on $DIRECTORIES"
+	RET=1
+
+	nice tar -cML $SZ -F "$VOLSCRIPT" -f $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT $DIRECTORIES >> $LOGNAME 2>&1
+	RET="$?"
+	log_it "executed: tar with RET=$RET"
+
+	######### FOLLOW WITH PAR2 IF EVERYTHING WENT GOOD AND REQUESTED
+
+	if [ "$RET" = "0" ] && [ "$PAR" = "1" ]; then
+		par2 create $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT-* >> $LOGNAME 2>&1
+		log_it "executed: par2"
+	fi
+}
+
 #******** MAIN ********#
 
 PATH=/usr/local/bin:/usr/bin:/bin:$PATH
 
 ######### PARSE AND CHECK REQUIRED ARGS
 
-while getopts "c:d:e:fim:n:o:p:t:w:z:" flag; do
+while getopts "c:d:e:fil:m:n:o:p:rt:w:z:" flag; do
 	case $flag in
 		[c])
 			BACKUPUSER="$OPTARG"
@@ -219,6 +266,9 @@ while getopts "c:d:e:fim:n:o:p:t:w:z:" flag; do
 		[i])
 			FORCEINCR=1
 			;;
+		[l])
+			SZ="$OPTARG"
+			;;
 		[m])
 			BACKUPDOM="$OPTARG"
 			;;
@@ -230,6 +280,9 @@ while getopts "c:d:e:fim:n:o:p:t:w:z:" flag; do
 			;;
 		[p])
 			BACKUPDIR="$OPTARG"
+			;;
+		[r])
+			PAR=1
 			;;
 		[t])
 			BACKUPTYPE="$OPTARG"
@@ -253,7 +306,7 @@ if [ -z "$DIRECTORIES" ] || [ -z "$BACKUPDIR" ]; then
 	usage
 	exit 1
 fi
-if [ "$BACKUPTYPE" != "local" ] && [ -z "$BACKUPHOST" ]; then
+if [ -z "$BACKUPHOST" ] && [ "$BACKUPTYPE" != "local" ] && [ "$BACKUPTYPE" != "localmulti" ]; then
 	echo "Required arguments not found BACKUPTYPE=$BACKUPTYPE BACKUPHOST=$BACKUPHOST"
 	usage
 	exit 1
@@ -303,7 +356,7 @@ fi
 
 ######### EXIT IF WE ARENT DOING A BACKUP TODAY
 
-if [ "$TYPENAME" = "" ]; then
+if [ "$TYPENAME" = "" ] && [ "$BACKUPTYPE" != "localmulti" ]; then
 	log_it "Backup ran with no TYPENAME, exiting."
 	exit 0
 fi
@@ -323,6 +376,10 @@ fi
 
 if [ "$BACKUPTYPE" = "local" ]; then
 	local_type
+fi
+
+if [ "$BACKUPTYPE" = "localmulti" ]; then
+	localmulti_type
 fi
 
 ######### COMPLETE
