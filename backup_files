@@ -207,11 +207,13 @@ localmulti_type() {
 
 	######### REMOVE THE OLD FILES - DOES NOT SUPPORT WORKING STAGE
 
-	rm -f $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT >> $LOGNAME 2>&1
-	rm -f $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT-* >> $LOGNAME 2>&1
+	rm -f $BACKUPDIR/$BACKUPNAME.multi.$BACKUPEXT >> $LOGNAME 2>&1
+	rm -f $BACKUPDIR/$BACKUPNAME.multi.$BACKUPEXT-* >> $LOGNAME 2>&1
 	if [ "$PAR" = "1" ]; then
-		rm -f $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT.par2 >> $LOGNAME 2>&1
-		rm -f $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT.*.par2 >> $LOGNAME 2>&1
+		rm -f $BACKUPDIR/$BACKUPNAME.multi.$BACKUPEXT.par2 >> $LOGNAME 2>&1
+		rm -f $BACKUPDIR/$BACKUPNAME.multi.$BACKUPEXT.*.par2 >> $LOGNAME 2>&1
+        else
+		rm -f $BACKUPDIR/$BACKUPNAME.multi.$BACKUPEXT.md5 >> $LOGNAME 2>&1
 	fi
 	log_it "executed: rm orig"
 
@@ -231,15 +233,20 @@ localmulti_type() {
 	log_it "running: tar with $SZ on $DIRECTORIES"
 	RET=1
 
-	nice tar -cML $SZ -F "$VOLSCRIPT" -f $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT $DIRECTORIES >> $LOGNAME 2>&1
+	nice tar -cML $SZ -F "$VOLSCRIPT" -f $BACKUPDIR/$BACKUPNAME.multi.$BACKUPEXT $DIRECTORIES >> $LOGNAME 2>&1
 	RET="$?"
 	log_it "executed: tar with RET=$RET"
 
-	######### FOLLOW WITH PAR2 IF EVERYTHING WENT GOOD AND REQUESTED
+	######### FOLLOW WITH PAR2 OR MD5 IF EVERYTHING WENT GOOD AND REQUESTED
 
-	if [ "$RET" = "0" ] && [ "$PAR" = "1" ]; then
-		par2 create $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT $BACKUPDIR/$BACKUPNAME-multi.$BACKUPEXT-* >> $LOGNAME 2>&1
-		log_it "executed: par2"
+	if [ "$RET" = "0" ]; then
+		if [ "$PAR" = "1" ]; then
+			par2 create $BACKUPDIR/$BACKUPNAME.multi.$BACKUPEXT $BACKUPDIR/$BACKUPNAME.multi.$BACKUPEXT-* >> $LOGNAME 2>&1
+			log_it "executed: par2"
+		else
+			md5sum $BACKUPDIR/$BACKUPNAME.multi.$BACKUPEXT | sed -r "s/ .*\/(.+)/  \1/g" > $BACKUPDIR/$BACKUPNAME.multi.$BACKUPEXT.md5
+			log_it "executed: md5sum"
+		fi
 	fi
 }
 
