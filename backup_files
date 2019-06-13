@@ -222,7 +222,7 @@ localmulti_type() {
 	# Tar info script to generate volume names
 	# Note: bash is used since possible TAR_FD > 9
 	VOLSCRIPT='
-		export VOL=$(printf \"%s-%03d\" ${TAR_ARCHIVE%-*} $TAR_VOLUME)
+		export VOL=$(printf "%s-%03d" ${TAR_ARCHIVE%-*} $TAR_VOLUME)
 		echo TAR_SUBCOMMAND=$TAR_SUBCOMMAND TAR_ARCHIVE=$TAR_ARCHIVE TAR_VOLUME=$TAR_VOLUME TAR_FD=$TAR_FD VOL=$VOL
 		case $TAR_SUBCOMMAND in
 			-c) ;;
