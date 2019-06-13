@@ -219,16 +219,18 @@ localmulti_type() {
 
 	######### TAR IT UP
 
-	VOLSCRIPT="
-		echo Preparing volume \$TAR_VOLUME of \$TAR_ARCHIVE.
-		name=\$(expr \$TAR_ARCHIVE : '\(.*\)-.*')
-		case \$TAR_SUBCOMMAND in
+        # Tar info script to generate volume names
+	# Note: bash is used since possible TAR_FD > 9
+	VOLSCRIPT='
+                export VOL=$(printf \"%s-%03d\" ${TAR_ARCHIVE%-*} $TAR_VOLUME)
+		echo TAR_SUBCOMMAND=$TAR_SUBCOMMAND TAR_ARCHIVE=$TAR_ARCHIVE TAR_VOLUME=$TAR_VOLUME TAR_FD=$TAR_FD VOL=$VOL
+		case $TAR_SUBCOMMAND in
 			-c) ;;
-			-d|-x|-t) test -r \${name:-\$TAR_ARCHIVE}-\$TAR_VOLUME || exit 1 ;;
+			-d|-x|-t) test -r $VOL || exit 1 ;;
 			*) exit 1
 		esac
-		printf '%s-%03d' \${name:-\$TAR_ARCHIVE} \$TAR_VOLUME >&\$TAR_FD
-	"
+                bash -c "echo $VOL >&$TAR_FD"
+	'
 
 	log_it "running: tar with $SZ on $DIRECTORIES"
 	RET=1
