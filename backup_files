@@ -16,6 +16,7 @@ BDFILENAME=full-date
 FULLNAME=full
 INCRNAME=incr
 LOG_ECHO=${LOG_ECHO:-1}
+SSH_OPTS=${SSH_OPTS:-}
 
 #******** ARGUMENT VARIABLES ********#
 BACKUPUSER=backup
@@ -95,12 +96,12 @@ ssh_type() {
 
 	log_it "running: rm old working"
 	RET=1
-	ssh -l ${BACKUPUSER} -- ${BACKUPHOST} rm -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT.working >> $LOGNAME 2>&1
+	ssh ${SSH_OPTS} -l ${BACKUPUSER} -- ${BACKUPHOST} rm -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT.working >> $LOGNAME 2>&1
 	RET="$?"
 	log_it "executed: rm old working RET=$RET"
 
 	#~~~~~~~~~ KLUDGE UNTIL MORE DISK SPACE, REMOVE THE OLD BACKUP TOO
-	#ssh -l ${BACKUPUSER} -- ${BACKUPHOST} rm -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT >> $LOGNAME 2>&1
+	#ssh ${SSH_OPTS} -l ${BACKUPUSER} -- ${BACKUPHOST} rm -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT >> $LOGNAME 2>&1
 	#log_it "executed: rm orig"
 	#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -109,14 +110,14 @@ ssh_type() {
 	log_it "running: tar with $NEWER and $FROMDATE on $DIRECTORIES"
 	RET=1
 	# TODO putting an empty "$FROMDATE" will cause one harmless "tar: : No such file or directory" message
-	nice tar $NEWER "$FROMDATE" -c $COMPRESSOPT -f - $DIRECTORIES 2>> $LOGNAME | ssh -l ${BACKUPUSER} -- ${BACKUPHOST} "( cat > $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT.working )" >> $LOGNAME 2>&1
+	nice tar $NEWER "$FROMDATE" -c $COMPRESSOPT -f - $DIRECTORIES 2>> $LOGNAME | ssh ${SSH_OPTS} -l ${BACKUPUSER} -- ${BACKUPHOST} "( cat > $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT.working )" >> $LOGNAME 2>&1
 	RET="$?"
 	log_it "executed: tar with RET=$RET"
 
 	######### MOVE TO KEEP IF EVERYTHING WENT GOOD
 
 	if [ "$RET" = "0" ]; then
-		ssh -l ${BACKUPUSER} -- ${BACKUPHOST} mv -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT.working $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT >> $LOGNAME 2>&1
+		ssh ${SSH_OPTS} -l ${BACKUPUSER} -- ${BACKUPHOST} mv -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT.working $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT >> $LOGNAME 2>&1
 		echo "$BD" > "$ADDTOBDFILENAME" #this only adds if not dev null
 		log_it "executed: mv working to main for $BD in $ADDTOBDFILENAME"
 
@@ -124,10 +125,10 @@ ssh_type() {
 		if [ ! -z "$BACKUPENCPW" ]; then
 			log_it "gpg encrypting"
 			# Encrypt if requested
-			ssh -l ${BACKUPUSER} -- ${BACKUPHOST} gpg --yes --batch --no-use-agent --passphrase=$BACKUPENCPW -c $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT >> $LOGNAME 2>&1
+			ssh ${SSH_OPTS} -l ${BACKUPUSER} -- ${BACKUPHOST} gpg --yes --batch --no-use-agent --passphrase=$BACKUPENCPW -c $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT >> $LOGNAME 2>&1
 			RET="$?"
 			if [ "$RET" = "0" ]; then
-				ssh -l ${BACKUPUSER} -- ${BACKUPHOST} rm -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT >> $LOGNAME 2>&1
+				ssh ${SSH_OPTS} -l ${BACKUPUSER} -- ${BACKUPHOST} rm -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT >> $LOGNAME 2>&1
 			fi
 			log_it "encrypted"
 		fi
