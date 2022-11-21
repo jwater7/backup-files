@@ -85,12 +85,14 @@ log_it() {
 	#logger -t "$(basename -- $0)" -s -i -- $1
 	#logger -t "$(basename -- $0)" -i -- $1
 	if [ ! -z "$LOG_ECHO" ]; then
-		echo $1
+		echo "$(date '+%Y-%m-%dT%H:%M:%S%z') ($$): $1"
 	fi
-	echo $1 >> $LOGNAME 2>&1
+	echo "$(date '+%Y-%m-%dT%H:%M:%S%z') ($$): $1" >> $LOGNAME 2>&1
 }
 
 ssh_type() {
+
+	log_it "Using ssh_type with SSH_OPTS=${SSH_OPTS}"
 
 	######### REMOVE THE OLD WORKING
 
@@ -344,7 +346,8 @@ mkdir -p $SCRIPTDIR
 if [ ! -z "$LOG_ECHO" ]; then
 	echo "Additional logging to $LOGNAME"
 fi
-log_it "$(date) STARTING $0"
+log_it "#########################"
+log_it "STARTING $0"
 
 ######### FIGURE OUT WHAT TYPE OF BACKUP
 
@@ -375,7 +378,6 @@ fi
 
 ######### START THE BACKUP
 
-log_it "#########################"
 log_it "Running for BACKUPUSER=${BACKUPUSER} BACKUPHOST=${BACKUPHOST} BACKUPDIR=${BACKUPDIR} BACKUPNAME=${BACKUPNAME} TYPENAME=${TYPENAME} BACKUPTYPE=${BACKUPTYPE} BACKUPDOM=${BACKUPDOM} BACKUPDOW=${BACKUPDOW} COMPRESSOPT=${COMPRESSOPT} BACKUPEXT=${BACKUPEXT}"
 
 if [ "$BACKUPTYPE" = "ssh" ]; then
