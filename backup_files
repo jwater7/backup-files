@@ -94,8 +94,10 @@ ssh_type() {
 	######### REMOVE THE OLD WORKING
 
 	log_it "running: rm old working"
+	RET=1
 	ssh -l ${BACKUPUSER} -- ${BACKUPHOST} rm -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT.working >> $LOGNAME 2>&1
-	log_it "executed: rm old working"
+	RET="$?"
+	log_it "executed: rm old working RET=$RET"
 
 	#~~~~~~~~~ KLUDGE UNTIL MORE DISK SPACE, REMOVE THE OLD BACKUP TOO
 	#ssh -l ${BACKUPUSER} -- ${BACKUPHOST} rm -f $BACKUPDIR/$BACKUPNAME-$TYPENAME.$BACKUPEXT >> $LOGNAME 2>&1
